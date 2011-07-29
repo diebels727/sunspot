@@ -16,11 +16,19 @@ describe 'nested_fields' do
   end
   
   it 'highlights results' do
-    searches = Sunspot.search( Nest ) do
+    Sunspot.search( Nest ) do
       keywords 'jackson' do
         highlight
       end
     end.hits.first.highlights.first.field_name.should == :birdy_name    
+  end
+  
+  it 'defaults the namespace to the nested attribute' do
+    Sunspot.search( Nest ) do
+      keywords 'eagle' do
+        highlight
+      end
+    end.hits.first.highlights.first.field_name.should == :birdies_type
   end
   
 end

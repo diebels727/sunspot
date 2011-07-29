@@ -49,8 +49,8 @@ module Sunspot
         options   = resources.pop if resources.last.is_a?(Hash)
         resource  = resources.first
         
-        attributes = options.delete(:attributes)
-        namespace  = options.delete(:namespace) || :nested
+        attributes = options.delete(:attributes) 
+        namespace  = options.delete(:namespace) || resource.to_sym
         stored_option = options[:stored]
                 
         attributes.each do |attribute|           
