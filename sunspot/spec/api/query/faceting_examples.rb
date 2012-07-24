@@ -1,5 +1,3 @@
-require File.join(File.dirname(__FILE__), 'spec_helper')
-
 shared_examples_for "facetable query" do
   describe 'on fields' do
     it 'does not turn faceting on if no facet requested' do
@@ -55,6 +53,13 @@ shared_examples_for "facetable query" do
         facet :category_ids, :limit => 10
       end
       connection.should have_last_search_with(:"f.category_ids_im.facet.limit" => 10)
+    end
+    
+    it 'sets the facet offset' do
+      search do
+        facet :category_ids, :offset => 10
+      end
+      connection.should have_last_search_with(:"f.category_ids_im.facet.offset" => 10)
     end
 
     it 'sets the facet minimum count' do
@@ -174,17 +179,6 @@ shared_examples_for "facetable query" do
       connection.should have_last_search_with(:"f.blog.facet.sort" => 'true')
     end
 
-    it 'raises an ArgumentError if exclusion attempted on a query facet' do
-      lambda do
-        search do
-          blog_filter = with(:blog_id, 1)
-          facet(:bad, :exclude => blog_filter) do
-            row(:bogus) { with(:blog_id, 1) }
-          end
-        end
-      end.should raise_error(ArgumentError)
-    end
-
     it 'raises an ArgumentError if exclusion attempted on a restricted field facet' do
       lambda do
         search do
@@ -252,6 +246,58 @@ shared_examples_for "facetable query" do
       lambda do
         search do |query|
           query.facet :blog_id, :time_range => @time_range
+        end
+      end.should raise_error(ArgumentError)
+    end
+  end
+
+  describe 'on range facets' do
+    before :each do
+      @range = 2..4
+    end
+
+    it 'does not send range facet parameters if integer range is not specified' do
+      search do |query|
+        query.facet :average_rating
+      end
+      connection.should_not have_last_search_with(:"facet.range")
+    end
+
+    it 'sets the facet to a range facet if the range is specified' do
+      search do |query|
+        query.facet :average_rating, :range => @range
+      end
+      connection.should have_last_search_with(:"facet.range" => ['average_rating_ft'])
+    end
+
+    it 'sets the facet start and end' do
+      search do |query|
+        query.facet :average_rating, :range => @range
+      end
+      connection.should have_last_search_with(
+        :"f.average_rating_ft.facet.range.start" => '2.0',
+        :"f.average_rating_ft.facet.range.end" => '4.0'
+      )
+    end
+
+    it 'defaults the range interval to 10' do
+      search do |query|
+        query.facet :average_rating, :range => @range
+      end
+      connection.should have_last_search_with(:"f.average_rating_ft.facet.range.gap" => "10")
+    end
+
+    it 'uses custom range interval' do
+      search do |query|
+        query.facet :average_rating, :range => @range, :range_interval => 1
+      end
+      connection.should have_last_search_with(:"f.average_rating_ft.facet.range.gap" => "1")
+    end
+
+    it 'does not allow date faceting on a non-continuous field' do
+      lambda do
+        search do |query|
+          query.facet :title, :range => @range
         end
       end.should raise_error(ArgumentError)
     end
@@ -368,6 +414,58 @@ shared_examples_for "facetable query" do
       end
       connection.searches.last[:"facet.query"].should be_a(String)
     end
+
+    it 'tags and excludes a scope filter in a query facet' do
+      search do
+        blog_filter = with(:blog_id, 1)
+        facet:foo, :exclude => blog_filter do
+          row(:bar) do
+            with(:category_ids, 1)
+          end
+        end
+      end
+      filter_tag = get_filter_tag('blog_id_i:1')
+      connection.should have_last_search_with(
+        :"facet.query" => "{!ex=#{filter_tag}}category_ids_im:1"
+      )
+    end
+
+    it 'tags and excludes a disjunction filter in a query facet' do
+      search do
+        blog_filter = any_of do
+          with(:blog_id, 1)
+          with(:blog_id, 2)
+        end
+        facet:foo, :exclude => blog_filter do
+          row(:bar) do
+            with(:category_ids, 1)
+          end
+        end
+      end
+      filter_tag = get_filter_tag('(blog_id_i:1 OR blog_id_i:2)')
+      connection.should have_last_search_with(
+        :"facet.query" => "{!ex=#{filter_tag}}category_ids_im:1"
+      )
+    end
+
+    it 'tags and excludes multiple filters in a query facet' do
+      search do
+        blog_filter = with(:blog_id, 1)
+        category_filter = with(:category_ids, 2)
+        facet:foo, :exclude => [blog_filter, category_filter] do
+          row(:bar) do
+            with(:category_ids, 1)
+          end
+        end
+      end
+      filter_tags = %w(blog_id_i:1 category_ids_im:2).map do |phrase|
+        get_filter_tag(phrase)
+      end.join(',')
+      connection.should have_last_search_with(
+        :"facet.query" => "{!ex=#{filter_tags}}category_ids_im:1"
+      )
+    end
+
 
     it 'ignores facet query with only empty rows' do
       search do

@@ -1,11 +1,13 @@
 sunspot-solr.pid
 *.swp
+*.swo
+*~
 coverage
 pkg
 /doc
 .DS_Store
 
 .yardoc
-sunspot.gemspec
 README.rdoc
 .bundle
+Gemfile.lock

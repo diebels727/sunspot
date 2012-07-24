@@ -31,11 +31,59 @@ module Sunspot
         @query.add_sort(sort)
       end
 
+      #
+      # Specify that the results should be ordered based on their
+      # distance from a given point.
+      #
+      # ==== Parameters
+      #
+      # field_name<Symbol>::
+      #   the field that stores the location (declared as `latlon`)
+      # lat<Numeric>::
+      #   the reference latitude
+      # lon<Numeric>::
+      #   the reference longitude
+      # direction<Symbol>::
+      #   :asc or :desc (default :asc)
+      # 
+      def order_by_geodist(field_name, lat, lon, direction = nil)
+        @query.add_sort(
+          Sunspot::Query::Sort::GeodistSort.new(@setup.field(field_name), lat, lon, direction)
+        )
+      end
+
       # 
       # DEPRECATED Use <code>order_by(:random)</code>
       #
       def order_by_random
         order_by(:random)
+      end
+
+      # Specify a field for result grouping. Grouping groups documents
+      # with a common field value, return only the top document per
+      # group.
+      #
+      # More information in the Solr documentation:
+      # <http://wiki.apache.org/solr/FieldCollapsing>
+      #
+      # ==== Parameters
+      #
+      # field_name<Symbol>:: the field to use for grouping
+      def group(*field_names, &block)
+        options = Sunspot::Util.extract_options_from(field_names)
+
+        field_names.each do |field_name|
+          field = @setup.field(field_name)
+          group = @query.add_group(Sunspot::Query::FieldGroup.new(field))
+          @search.add_field_group(field)
+
+          if block
+            Sunspot::Util.instance_eval_or_call(
+              FieldGroup.new(@query, @setup, group),
+              &block
+            )
+          end
+        end
       end
 
       #
@@ -137,6 +185,19 @@ module Sunspot
       # semantic meaning is attached to them. The label for +facet+ should be
       # a symbol; the label for +row+ can be whatever you'd like.
       #
+      # ==== Range Facets
+      #
+      # One can use the Range Faceting feature on any date field or any numeric
+      # field that supports range queries. This is particularly useful for the
+      # cases in the past where one might stitch together a series of range
+      # queries (as facet by query) for things like prices, etc.
+      #
+      # For example faceting over average ratings can be done as follows:
+      #
+      #   Sunspot.search(Post) do
+      #     facet :average_rating, :range => 1..5, :range_interval => 1
+      #   end
+      #
       # ==== Parameters
       #
       # field_names...<Symbol>:: fields for which to return field facets
@@ -147,6 +208,8 @@ module Sunspot
       #   Either :count (values matching the most terms first) or :index (lexical)
       # :limit<Integer>::
       #   The maximum number of facet rows to return
+      # :offset<Integer>::
+      #   The offset from which to start returning facet rows
       # :minimum_count<Integer>::
       #   The minimum count a facet row must have to be returned
       # :zeros<Boolean>::
@@ -186,15 +249,9 @@ module Sunspot
               "wrong number of arguments (#{field_names.length} for 1)"
             )
           end
-          if options.has_key?(:exclude)
-            raise(
-              ArgumentError,
-              "can't use :exclude with query facets"
-            )
-          end
           search_facet = @search.add_query_facet(field_names.first, options)
           Sunspot::Util.instance_eval_or_call(
-            QueryFacet.new(@query, @setup, search_facet),
+            QueryFacet.new(@query, @setup, search_facet, options),
             &block
           )
         elsif options[:only]
@@ -228,6 +285,15 @@ module Sunspot
                 end
                 search_facet = @search.add_date_facet(field, options)
                 Sunspot::Query::DateFieldFacet.new(field, options)
+              elsif options[:range]
+                unless [Sunspot::Type::TimeType, Sunspot::Type::FloatType, Sunspot::Type::IntegerType ].inject(false){|res,type| res || field.type.is_a?(type)}
+                  raise(
+                    ArgumentError,
+                    ':range can only be specified for date or numeric fields'
+                  )
+                end
+                search_facet = @search.add_range_facet(field, options)
+                Sunspot::Query::RangeFacet.new(field, options)
               else
                 search_facet = @search.add_field_facet(field, options)
                 Sunspot::Query::FieldFacet.new(field, options)

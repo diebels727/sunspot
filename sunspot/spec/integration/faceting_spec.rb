@@ -1,4 +1,4 @@
-require File.join(File.dirname(__FILE__), 'spec_helper')
+require File.expand_path('../spec_helper', File.dirname(__FILE__))
 
 describe 'search faceting' do
   def self.test_field_type(name, attribute, field, *args)
@@ -84,6 +84,13 @@ describe 'search faceting' do
       end
       search.facet(:title).rows.map { |row| row.value }.should include('zero')
     end
+    
+    it 'should return facet rows from an offset' do
+      search = Sunspot.search(Post) do
+        facet :title, :offset => 3
+      end
+      search.facet(:title).rows.map { |row| row.value }.should == %w(one zero)
+    end
 
     it 'should return a specified minimum count' do
       search = Sunspot.search(Post) do
@@ -134,6 +141,19 @@ describe 'search faceting' do
       search.facet(:title).rows.first.value.should == :none
       search.facet(:title).rows.first.count.should == 1
     end
+
+    it 'gives correct facet count when group == true and truncate == true' do
+      search = Sunspot.search(Post) do
+        group :title do
+          truncate
+        end
+
+        facet :title, :extra => :any
+      end
+
+      # Should be 5 instead of 11
+      search.facet(:title).rows.first.count.should == 5
+    end
   end
 
   context 'multiselect faceting' do
@@ -146,24 +166,70 @@ describe 'search faceting' do
       )
     end
 
-    it 'should exclude filter from faceting' do
-      search = Sunspot.search(Post) do
-        with(:blog_id, 1)
-        category_filter = with(:category_ids, 1)
-        facet(:category_ids, :exclude => category_filter)
+    context 'field faceting' do
+      it 'should exclude filter from faceting' do
+        search = Sunspot.search(Post) do
+          with(:blog_id, 1)
+          category_filter = with(:category_ids, 1)
+          facet(:category_ids, :exclude => category_filter)
+        end
+        search.facet(:category_ids).rows.map { |row| row.value }.to_set.should == Set[1, 2]
       end
-      search.facet(:category_ids).rows.map { |row| row.value }.to_set.should == Set[1, 2]
+
+      it 'should use facet keys to facet more than once with different exclusions' do
+        search = Sunspot.search(Post) do
+          with(:blog_id, 1)
+          category_filter = with(:category_ids, 1)
+          facet(:category_ids)
+          facet(:category_ids, :exclude => category_filter, :name => :all_category_ids)
+        end
+        search.facet(:category_ids).rows.map { |row| row.value }.should == [1]
+        search.facet(:all_category_ids).rows.map { |row| row.value }.to_set.should == Set[1, 2]
+      end
     end
 
-    it 'should use facet keys to facet more than once with different exclusions' do
-      search = Sunspot.search(Post) do
-        with(:blog_id, 1)
-        category_filter = with(:category_ids, 1)
-        facet(:category_ids)
-        facet(:category_ids, :exclude => category_filter, :name => :all_category_ids)
+    context 'query faceting' do
+      it 'should exclude filter from faceting' do
+        search = Sunspot.search(Post) do
+          with(:blog_id, 1)
+          category_filter = with(:category_ids, 1)
+          facet :category_ids, :exclude => category_filter do
+            row(:category_1) do
+              with(:category_ids, 1)
+            end
+            row(:category_2) do
+              with(:category_ids, 2)
+            end
+          end
+        end
+        search.facet(:category_ids).rows.map { |row| [row.value, row.count] }.to_set.should == Set[[:category_1, 1], [:category_2, 1]]
       end
-      search.facet(:category_ids).rows.map { |row| row.value }.should == [1]
-      search.facet(:all_category_ids).rows.map { |row| row.value }.to_set.should == Set[1, 2]
+
+      it 'should use facet keys to facet more than once with different exclusions' do
+        search = Sunspot.search(Post) do
+          with(:blog_id, 1)
+          category_filter = with(:category_ids, 1)
+          facet :category_ids do
+            row(:category_1) do
+              with(:category_ids, 1)
+            end
+            row(:category_2) do
+              with(:category_ids, 2)
+            end
+          end
+
+          facet :all_category_ids, :exclude => category_filter do
+            row(:category_1) do
+              with(:category_ids, 1)
+            end
+            row(:category_2) do
+              with(:category_ids, 2)
+            end
+          end
+        end
+        search.facet(:category_ids).rows.map { |row| [row.value, row.count] }.to_set.should == Set[[:category_1, 1]]
+        search.facet(:all_category_ids).rows.map { |row| [row.value, row.count] }.to_set.should == Set[[:category_1, 1], [:category_2, 1]]
+      end
     end
   end
 

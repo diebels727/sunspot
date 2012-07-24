@@ -1,7 +1,7 @@
 module Sunspot
   module Rails
     class Railtie < ::Rails::Railtie
-      initializer 'sunspot_rails.init' do
+      initializer 'sunspot_rails.init', :before=> :load_config_initializers do
         Sunspot.session = Sunspot::Rails.build_session
         ActiveSupport.on_load(:active_record) do
           Sunspot::Adapters::InstanceAdapter.register(Sunspot::Rails::Adapters::ActiveRecordInstanceAdapter, ActiveRecord::Base)
@@ -12,7 +12,7 @@ module Sunspot
           include(Sunspot::Rails::RequestLifecycle)
         end
         require 'sunspot/rails/log_subscriber'
-        RSolr::Client.module_eval{ include Sunspot::Rails::SolrInstrumentation }
+        RSolr::Connection.module_eval{ include Sunspot::Rails::SolrInstrumentation }
       end
 
       # Expose database runtime to controller for logging.

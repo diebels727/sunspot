@@ -1,5 +1,3 @@
-require File.join(File.dirname(__FILE__), 'spec_helper')
-
 shared_examples_for 'sortable query' do
   it 'paginates using default per_page when page not provided' do
     search
@@ -25,6 +23,20 @@ shared_examples_for 'sortable query' do
       paginate :per_page => 15
     end
     connection.should have_last_search_with(:rows => 15, :start => 0)
+  end
+
+  it 'paginates with an offset' do
+    search do
+      paginate :per_page => 15, :offset => 3
+    end
+    connection.should have_last_search_with(:rows => 15, :start => 3)
+  end
+
+  it 'paginates with an offset as a string' do
+    search do
+      paginate :per_page => 15, :offset => '3'
+    end
+    connection.should have_last_search_with(:rows => 15, :start => 3)
   end
 
   it 'paginates from string argument' do
@@ -61,6 +73,13 @@ shared_examples_for 'sortable query' do
       order_by :score, :desc
     end
     connection.should have_last_search_with(:sort => 'score desc')
+  end
+
+  it 'orders by geodist' do
+    search do
+      order_by_geodist :coordinates_new, 32, -68, :desc
+    end
+    connection.should have_last_search_with(:sort => 'geodist(coordinates_new_ll,32,-68) desc')
   end
 
   it 'throws an ArgumentError if a bogus order direction is given' do
